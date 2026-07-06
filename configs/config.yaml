@@ -1,0 +1,14 @@
+defaults:
+  - model: qwen3-0.6b
+  - training: sft
+  - optimizer: paged_adamw_8bit
+  - scheduler: cosine
+  - dataset: example-chat
+  - lora: qlora
+  - logging: default
+  - evaluation: default
+  - experiment: default
+  - hardware: auto
+  - tokenizer: default
+  - export: gguf
+  - _self_

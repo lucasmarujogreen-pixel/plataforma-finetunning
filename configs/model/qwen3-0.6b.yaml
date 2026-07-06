@@ -1,0 +1,6 @@
+name: Qwen/Qwen3-0.6B
+revision: main
+cache_dir: models
+trust_remote_code: false
+precision: auto
+attention: auto

@@ -1,0 +1,12 @@
+level: INFO
+log_dir: logs
+json_metrics: true
+csv_metrics: true
+system_metrics_interval_seconds: 5.0
+mlflow:
+  enabled: true
+  tracking_uri: sqlite:///artifacts/mlflow.db
+  experiment_name: finetuning
+tensorboard:
+  enabled: true
+  log_dir: artifacts/tensorboard

@@ -1,0 +1,52 @@
+services:
+  train:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["train"]
+    volumes:
+      - ../configs:/app/configs
+      - ../datasets:/app/datasets
+      - ../models:/app/models
+      - ../runs:/app/runs
+      - ../artifacts:/app/artifacts
+      - ../logs:/app/logs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  mlflow:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: ["uv", "run", "mlflow", "ui"]
+    command:
+      [
+        "--backend-store-uri",
+        "sqlite:////app/artifacts/mlflow.db",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5000",
+      ]
+    volumes:
+      - ../artifacts:/app/artifacts
+    ports:
+      - "5000:5000"
+
+  tensorboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: ["uv", "run", "tensorboard"]
+    command:
+      ["--logdir", "/app/artifacts/tensorboard", "--host", "0.0.0.0", "--port", "6006"]
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../runs:/app/runs
+    ports:
+      - "6006:6006"

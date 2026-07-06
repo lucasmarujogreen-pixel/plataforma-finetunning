@@ -1,0 +1,8 @@
+enabled: true
+perplexity: true
+compare_with_base: true
+save_plots: true
+max_eval_samples: null
+benchmark:
+  num_prompts: 5
+  max_new_tokens: 128

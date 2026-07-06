@@ -1,0 +1,7 @@
+type: paged_adamw_8bit
+learning_rate: 2.0e-4
+weight_decay: 0.01
+beta1: 0.9
+beta2: 0.999
+eps: 1.0e-8
+max_grad_norm: 1.0

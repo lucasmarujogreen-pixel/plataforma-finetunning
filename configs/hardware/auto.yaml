@@ -1,0 +1,7 @@
+device: auto
+allow_cpu_fallback: true
+num_workers: 4
+pin_memory: true
+prefetch_factor: 2
+persistent_workers: true
+torch_compile: false

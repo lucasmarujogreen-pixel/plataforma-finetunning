@@ -1,0 +1,14 @@
+.venv/
+.git/
+__pycache__/
+*.py[cod]
+models/
+datasets/cache/
+datasets/processed/
+runs/
+artifacts/
+logs/
+third_party/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

@@ -1,0 +1,19 @@
+name: greenlegis-condicoes-v3
+path: datasets/raw/greenlegis_condicoes_train_v3.jsonl
+format: jsonl
+record_schema: chat
+streaming: false
+deduplicate: true
+text_field: text
+messages_field: messages
+cleaning:
+  strip_whitespace: true
+  drop_empty: true
+  min_chars: 1
+  max_chars: 100000
+split:
+  validation: 0.02
+  test: 0.0
+  shuffle: true
+cache_dir: datasets/cache
+processed_dir: datasets/processed

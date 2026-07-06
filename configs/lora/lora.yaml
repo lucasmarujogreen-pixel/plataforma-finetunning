@@ -1,0 +1,10 @@
+r: 16
+alpha: 32
+dropout: 0.05
+target_modules: all-linear
+bias: none
+quantization:
+  load_in_4bit: false
+  quant_type: nf4
+  use_double_quant: true
+  compute_precision: bf16

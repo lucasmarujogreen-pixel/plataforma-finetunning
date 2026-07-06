@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Generated / local-only project data
+models/
+datasets/cache/
+datasets/processed/
+runs/
+artifacts/
+logs/
+third_party/
+outputs/
+.hydra/
+
+# Raw datasets (large, versioned outside git)
+datasets/raw/*.jsonl
+!datasets/raw/.gitkeep
+
+# Model weights and checkpoints
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# Secrets / credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+credentials.json
+secrets.json
+secrets.yaml
+secrets.yml
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# IDE / editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/

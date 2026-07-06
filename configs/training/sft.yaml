@@ -1,0 +1,18 @@
+method: qlora
+seed: 42
+num_epochs: 1.0
+max_steps: -1
+micro_batch_size: 1
+gradient_accumulation_steps: 8
+context_length: 1024
+packing: false
+gradient_checkpointing: true
+eval_steps: 50
+save_steps: 50
+logging_steps: 10
+save_total_limit: 3
+resume_from_checkpoint: null
+early_stopping:
+  enabled: false
+  patience: 3
+  threshold: 0.0
