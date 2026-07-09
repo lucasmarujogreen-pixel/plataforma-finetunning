@@ -11,6 +11,7 @@ from finetuning.cli import (
     export_commands,
     hardware_commands,
     model_commands,
+    reranker_commands,
     train_commands,
 )
 from finetuning.core.logging import setup_logging
@@ -38,6 +39,8 @@ app.command("show-experiment")(experiment_commands.show_experiment)
 app.command("compare")(experiment_commands.compare)
 app.command("export")(export_commands.export)
 app.command("merge-lora")(export_commands.merge_lora)
+app.command("train-reranker")(reranker_commands.train_reranker)
+app.command("evaluate-reranker")(reranker_commands.evaluate_reranker)
 
 
 @app.callback()

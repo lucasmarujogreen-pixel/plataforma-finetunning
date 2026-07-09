@@ -1,0 +1,14 @@
+enabled: true
+reranking_evaluator: true
+ndcg_at_k: [5, 10]
+hierarchical_f1: true
+train_path: datasets/raw/greenlegis_condicoes_train_v6.jsonl
+test_path: datasets/raw/greenlegis_condicoes_test_v6.jsonl
+knn_candidates_per_query: 40
+limit: 200
+# top_k=2: escolhido empiricamente — média real é 1.78 itens gold/query
+# (118/200 amostras têm exatamente 1); top_k=5 inflava falsos positivos.
+selection:
+  strategy: top_k
+  top_k: 2
+  threshold: 0.5

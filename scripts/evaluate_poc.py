@@ -9,14 +9,19 @@ Usage:
 
 import argparse
 import json
-import re
 from collections import Counter
 from pathlib import Path
 
 import torch
 
+from finetuning.evaluation.hierarchical_f1 import (
+    HIERARCHY_LEVELS,
+    extract_item_ids,
+    extract_paths,
+    f1_score,
+)
+
 TEST_PATH = Path("datasets/raw/greenlegis_condicoes_test.jsonl")
-FORM_ID_PATTERN = re.compile(r"\((\d+)\)")
 
 
 def load_test_examples(limit: int, path: Path = TEST_PATH) -> list[dict]:
@@ -27,44 +32,6 @@ def load_test_examples(limit: int, path: Path = TEST_PATH) -> list[dict]:
             if len(examples) >= limit:
                 break
     return examples
-
-
-HIERARCHY_LEVELS = ("leaf", "parent", "l2", "root")
-
-
-def extract_item_ids(target: dict) -> set[str]:
-    ids: set[str] = set()
-    for condition in target.get("condicoes", []):
-        for item in condition.get("itens", []):
-            match = FORM_ID_PATTERN.search(item)
-            ids.add(match.group(1) if match else item.strip().lower())
-    return ids
-
-
-def extract_paths(target: dict, level: str) -> set[str]:
-    paths: set[str] = set()
-    for condition in target.get("condicoes", []):
-        for item in condition.get("itens", []):
-            text = item[: item.rfind("(")] if "(" in item else item
-            parts = [part.strip() for part in text.split(">") if part.strip()]
-            if not parts:
-                continue
-            if level == "leaf":
-                paths.add(" > ".join(parts))
-            elif level == "parent":
-                paths.add(" > ".join(parts[:-1]) if len(parts) > 1 else parts[0])
-            elif level == "l2":
-                paths.add(" > ".join(parts[:2]))
-            elif level == "root":
-                paths.add(parts[0])
-    return paths
-
-
-def f1_score(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    return precision, recall, f1
 
 
 def parse_model_output(text: str) -> dict | None:

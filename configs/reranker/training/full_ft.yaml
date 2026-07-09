@@ -1,0 +1,18 @@
+method: full_ft
+seed: 42
+num_epochs: 3.0
+max_steps: -1
+micro_batch_size: 2
+gradient_accumulation_steps: 8
+max_length: 512
+gradient_checkpointing: true
+eval_steps: 100
+save_steps: 100
+logging_steps: 10
+save_total_limit: 3
+loss_type: lambda
+loss_kwargs: {}
+early_stopping:
+  enabled: true
+  patience: 3
+  threshold: 0.0

@@ -5,11 +5,12 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from loguru import logger
 
+from finetuning.core.config.reranker_schemas import RerankerAppConfig
 from finetuning.core.config.schemas import AppConfig
 from finetuning.core.exceptions import ExperimentError
 from finetuning.core.hashing import sha256_text
@@ -84,7 +85,7 @@ class ExperimentManager:
 
     def create_run(
         self,
-        config: AppConfig,
+        config: AppConfig | RerankerAppConfig,
         dataset_metadata: DatasetMetadata,
         hardware_profile: HardwareProfile,
         extras: dict[str, Any] | None = None,
@@ -173,8 +174,17 @@ class ExperimentManager:
         )
 
 
-def load_run_config(run_dir: Path) -> AppConfig:
+def _load_resolved_config(run_dir: Path) -> dict[str, Any]:
     resolved_path = run_dir / "configs" / RESOLVED_CONFIG_FILENAME
     if not resolved_path.is_file():
         raise ExperimentError(f"resolved config not found at {resolved_path}")
-    return AppConfig.model_validate(yaml.safe_load(resolved_path.read_text(encoding="utf-8")))
+    raw = yaml.safe_load(resolved_path.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], raw)
+
+
+def load_run_config(run_dir: Path) -> AppConfig:
+    return AppConfig.model_validate(_load_resolved_config(run_dir))
+
+
+def load_reranker_run_config(run_dir: Path) -> RerankerAppConfig:
+    return RerankerAppConfig.model_validate(_load_resolved_config(run_dir))

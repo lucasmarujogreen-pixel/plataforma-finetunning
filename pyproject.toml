@@ -28,6 +28,8 @@ dependencies = [
     "hf-transfer>=0.1",
     "psutil>=7.0",
     "matplotlib>=3.10",
+    "sentence-transformers>=4.0",
+    "scikit-learn>=1.5",
 ]
 
 [dependency-groups]

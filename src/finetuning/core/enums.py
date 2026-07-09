@@ -22,6 +22,7 @@ class DatasetSchema(StrEnum):
     CHAT = "chat"
     ALPACA = "alpaca"
     TEXT = "text"
+    PAIR = "pair"
 
 
 class Precision(StrEnum):
@@ -87,3 +88,15 @@ class LoraBias(StrEnum):
     NONE = "none"
     ALL = "all"
     LORA_ONLY = "lora_only"
+
+
+class RerankerTrainingMethod(StrEnum):
+    LORA = "lora"
+    FULL_FT = "full_ft"
+
+
+class RerankerLossType(StrEnum):
+    LAMBDA = "lambda"
+    LISTNET = "listnet"
+    RANKNET = "ranknet"
+    BINARY_CE = "binary_ce"

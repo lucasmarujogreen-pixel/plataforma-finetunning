@@ -59,14 +59,27 @@ def load_base_model(
     return AutoModelForCausalLM.from_pretrained(config.model.name, **kwargs)
 
 
-def _build_peft_config(lora: LoraConfig) -> PeftLoraConfig:
+def build_peft_config(
+    lora: LoraConfig,
+    task_type: str = "CAUSAL_LM",
+    exclude_modules: list[str] | None = None,
+    modules_to_save: list[str] | None = None,
+) -> PeftLoraConfig:
+    """Build a PEFT LoRA config. Shared by causal-LM strategies and the
+    reranker vertical (``training/reranker_strategies.py``), which passes
+    ``task_type="SEQ_CLS"`` plus ``exclude_modules``/``modules_to_save`` to
+    keep the (freshly initialized) classification head fully trainable
+    instead of LoRA-adapted.
+    """
     return PeftLoraConfig(
         r=lora.r,
         lora_alpha=lora.alpha,
         lora_dropout=lora.dropout,
         target_modules=lora.target_modules,
         bias=lora.bias.value,
-        task_type="CAUSAL_LM",
+        task_type=task_type,
+        exclude_modules=exclude_modules,
+        modules_to_save=modules_to_save,
     )
 
 
@@ -81,7 +94,7 @@ class LoRAStrategy(TrainingStrategy):
         device: DeviceType,
     ) -> Any:
         model = load_base_model(config, precision, attention, device)
-        peft_model = get_peft_model(model, _build_peft_config(config.lora))
+        peft_model = get_peft_model(model, build_peft_config(config.lora))
         peft_model.print_trainable_parameters()
         return peft_model
 
@@ -104,7 +117,7 @@ class QLoRAStrategy(TrainingStrategy):
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=config.training.gradient_checkpointing
         )
-        peft_model = get_peft_model(model, _build_peft_config(config.lora))
+        peft_model = get_peft_model(model, build_peft_config(config.lora))
         peft_model.print_trainable_parameters()
         return peft_model
 

@@ -1,0 +1,12 @@
+defaults:
+  - reranker/model@model: bge-reranker-v2-m3
+  - reranker/training@training: lora
+  - optimizer: adamw
+  - scheduler: cosine
+  - reranker/dataset@dataset: greenlegis-condicoes-reranker-v1
+  - lora: lora
+  - logging: default
+  - reranker/evaluation@evaluation: default
+  - experiment: default
+  - hardware: auto
+  - _self_

@@ -1,0 +1,7 @@
+name: greenlegis-condicoes-reranker-v1
+path: datasets/processed/reranker/train_pairs_v1.jsonl
+validation_path: datasets/processed/reranker/validation_pairs_v1.jsonl
+query_field: query
+docs_field: docs
+labels_field: labels
+cache_dir: datasets/cache
