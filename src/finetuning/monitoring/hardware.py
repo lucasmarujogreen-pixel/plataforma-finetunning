@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 import psutil
 import torch
+from loguru import logger
 
 from finetuning.core.config.schemas import HardwareConfig
 from finetuning.core.enums import AttentionImplementation, DeviceType, Precision
@@ -113,6 +114,26 @@ def resolve_precision(profile: HardwareProfile, requested: Precision) -> Precisi
     if profile.supports_fp16:
         return Precision.FP16
     return Precision.FP32
+
+
+def limit_vram_usage(device: DeviceType, config: HardwareConfig) -> None:
+    """Cap the CUDA allocator so this process leaves VRAM headroom for other GPU work.
+
+    ``torch.cuda.set_per_process_memory_fraction`` bounds how much the caching
+    allocator can ever reserve from the driver — training raises OOM instead
+    of creeping past the cap, rather than silently squeezing out whatever else
+    needs the GPU (the desktop compositor, a browser, etc. on a shared laptop
+    GPU under WSL2). No-op when ``max_vram_fraction`` is unset or the device
+    isn't CUDA, so existing configs/behavior are unaffected by default.
+    """
+    if device is not DeviceType.CUDA or config.max_vram_fraction is None:
+        return
+    torch.cuda.set_per_process_memory_fraction(config.max_vram_fraction)
+    logger.info(
+        "Capped CUDA memory fraction at {:.0%} — leaving >= {:.0%} of VRAM free for other tasks",
+        config.max_vram_fraction,
+        1 - config.max_vram_fraction,
+    )
 
 
 def resolve_attention(

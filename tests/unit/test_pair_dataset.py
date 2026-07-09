@@ -6,7 +6,11 @@ import pytest
 from finetuning.core.config.reranker_schemas import RerankerDatasetConfig
 from finetuning.core.enums import DatasetSchema
 from finetuning.core.exceptions import DatasetError
-from finetuning.preprocessing.pair_dataset import load_pair_dataset, to_training_columns
+from finetuning.preprocessing.pair_dataset import (
+    cap_docs_per_query,
+    load_pair_dataset,
+    to_training_columns,
+)
 
 
 def _write_jsonl(path: Path, records: list[dict]) -> None:
@@ -84,3 +88,62 @@ def test_to_training_columns_drops_meta_and_candidate_ids(
     trimmed = to_training_columns(prepared.dataset["train"], dataset_config)
 
     assert set(trimmed.column_names) == {"query", "docs", "labels"}
+
+
+def test_cap_docs_per_query_leaves_short_lists_untouched(
+    dataset_config: RerankerDatasetConfig,
+) -> None:
+    prepared = load_pair_dataset(dataset_config)
+
+    capped = cap_docs_per_query(prepared.dataset["train"], dataset_config, max_docs=3, seed=42)
+
+    assert capped[0]["docs"] == ["doc A", "doc B", "doc C"]
+
+
+def test_cap_docs_per_query_trims_negatives_but_keeps_every_positive(
+    tmp_path: Path,
+) -> None:
+    record = {
+        "meta": {"norma_id": 1},
+        "query": "q",
+        "docs": ["gold", "neg1", "neg2", "neg3", "neg4"],
+        "labels": [1.0, 0.0, 0.0, 0.0, 0.0],
+        "candidate_ids": ["1", "2", "3", "4", "5"],
+    }
+    train_path = tmp_path / "train.jsonl"
+    validation_path = tmp_path / "validation.jsonl"
+    _write_jsonl(train_path, [record])
+    _write_jsonl(validation_path, [record])
+    config = RerankerDatasetConfig(
+        name="cap-test", path=str(train_path), validation_path=str(validation_path)
+    )
+    prepared = load_pair_dataset(config)
+
+    capped = cap_docs_per_query(prepared.dataset["train"], config, max_docs=2, seed=42)
+
+    assert len(capped[0]["docs"]) == 2
+    assert "gold" in capped[0]["docs"]
+    assert capped[0]["labels"].count(1.0) == 1
+
+
+def test_cap_docs_per_query_is_deterministic(tmp_path: Path) -> None:
+    record = {
+        "meta": {"norma_id": 1},
+        "query": "q",
+        "docs": [f"doc{i}" for i in range(10)],
+        "labels": [1.0] + [0.0] * 9,
+        "candidate_ids": [str(i) for i in range(10)],
+    }
+    train_path = tmp_path / "train.jsonl"
+    validation_path = tmp_path / "validation.jsonl"
+    _write_jsonl(train_path, [record])
+    _write_jsonl(validation_path, [record])
+    config = RerankerDatasetConfig(
+        name="cap-test", path=str(train_path), validation_path=str(validation_path)
+    )
+    prepared = load_pair_dataset(config)
+
+    first = cap_docs_per_query(prepared.dataset["train"], config, max_docs=4, seed=7)
+    second = cap_docs_per_query(prepared.dataset["train"], config, max_docs=4, seed=7)
+
+    assert first[0]["docs"] == second[0]["docs"]

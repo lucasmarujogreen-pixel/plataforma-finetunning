@@ -8,6 +8,7 @@ record per query, with ``docs``/``labels`` lists) produced by
 tokenization stage applies here, only loading and describing.
 """
 
+import random
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -75,3 +76,38 @@ def to_training_columns(dataset: Dataset, config: RerankerDatasetConfig) -> Data
     keep = {config.query_field, config.docs_field, config.labels_field}
     drop = [column for column in dataset.column_names if column not in keep]
     return dataset.remove_columns(drop) if drop else dataset
+
+
+def cap_docs_per_query(
+    dataset: Dataset, config: RerankerDatasetConfig, max_docs: int, seed: int
+) -> Dataset:
+    """Subsample negatives so no training example has more than ``max_docs`` docs.
+
+    Real training runs (09/07/2026) crashed with CUDA OOM on a specific batch
+    a few steps in, at VRAM caps that otherwise ran fine — the dataset's
+    docs-per-query is highly skewed (p50=18, p90=40, max=40), and one
+    listwise example already means up to 40 (query, doc) forward passes
+    scored together regardless of the training batch size. This caps that
+    peak directly instead of shrinking the whole batch further, which was
+    already at its floor (micro_batch_size=1). All positives are always
+    kept — the model must never be trained on a list missing its own gold
+    item — negatives are trimmed deterministically (seeded) down to budget.
+    Never call this on the validation split: it must reflect the same
+    candidate pool the final POC-comparable evaluation uses.
+    """
+    docs_field, labels_field = config.docs_field, config.labels_field
+
+    def _cap(example: dict) -> dict:
+        docs, labels = example[docs_field], example[labels_field]
+        if len(docs) <= max_docs:
+            return example
+        positive = [i for i, label in enumerate(labels) if label == 1.0]
+        negative = [i for i, label in enumerate(labels) if label != 1.0]
+        budget = max(max_docs - len(positive), 0)
+        rng = random.Random(f"{seed}:{example[config.query_field]}")
+        kept = sorted(positive + rng.sample(negative, min(budget, len(negative))))
+        example[docs_field] = [docs[i] for i in kept]
+        example[labels_field] = [labels[i] for i in kept]
+        return example
+
+    return dataset.map(_cap)

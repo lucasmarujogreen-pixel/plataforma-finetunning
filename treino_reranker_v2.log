@@ -1,0 +1,10 @@
+[32m11:03:12[0m | [1mINFO    [0m | [36mfinetuning.monitoring.hardware[0m - [1mCapped CUDA memory fraction at 55% — leaving >= 45% of VRAM free for other tasks[0m
+[32m11:03:13[0m | [1mINFO    [0m | [36mfinetuning.infrastructure.experiment_manager[0m - [1mCreated experiment run 2026-07-09_14-03-13_bge-reranker-v2-m3 (718060be-a8e1-4fd2-8dd6-a3212fe2628f)[0m
+[32m11:03:13[0m | [1mINFO    [0m | [36mfinetuning.training.reranker_strategies[0m - [1mLoading reranker BAAI/bge-reranker-v2-m3 (precision=bf16, attention=sdpa, device=cuda)[0m
+The Transformer `cache_dir` argument is deprecated. Please pass `cache_dir` via `model_kwargs`, `processor_kwargs`, and/or `config_kwargs` instead.
+Loading weights:   0%|          | 0/393 [00:00<?, ?it/s]Loading weights:   2%|▏         | 9/393 [00:00<00:29, 12.94it/s]Loading weights: 100%|██████████| 393/393 [00:00<00:00, 664.32it/s]Loading weights: 100%|██████████| 393/393 [00:00<00:00, 493.49it/s]
+[32m11:03:20[0m | [1mINFO    [0m | [36mfinetuning.training.reranker_strategies[0m - [1mtrainable params: 8128513 / 575884290 (1.41%)[0m
+The `warmup_ratio` argument is deprecated in Transformers v5+, and will also be removed from Sentence Transformers once support for Transformers v4 is dropped. Since you're using Transformers v5+, please use `warmup_steps` (as a float) to specify the warmup ratio instead.
+[transformers] `logging_dir` is deprecated and will be removed in v5.2. Please set `TENSORBOARD_LOGGING_DIR` instead.
+[transformers] Using EarlyStoppingCallback without load_best_model_at_end=True. Once training is finished, the best model will not be loaded automatically.
+  0%|          | 0/996 [00:00<?, ?it/s]

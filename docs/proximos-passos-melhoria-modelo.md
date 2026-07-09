@@ -68,16 +68,41 @@ Dado que o problema tem cara de "ranquear/selecionar de uma lista fechada" mais 
 - Isso também melhora o teto de recall do kNN (seção 2.3), porque o mesmo modelo pode reordenar os candidatos do retrieval, não só os do fine-tuned.
 - **Sequência de menor risco**: testar isso localmente primeiro (custo ≈ zero) e só depois decidir se compensa somar um LLM maior em nuvem para a fatia <0.5 que sobrar.
 
-**Resultado real (09/07/2026)**: implementado e treinado `BAAI/bge-reranker-v2-m3` (LoRA, loss `lambda`, 1 época, 12h49 de GPU local) sobre o dataset de pares kNN. Avaliado nas mesmas 200 amostras da Etapa 8, com a seleção corrigida (`top_k=2`, calibrado pela distribuição real de itens gold — ver `configs/reranker/evaluation/default.yaml`):
+**Resultado real (09/07/2026)**: implementado e treinado de ponta a ponta. F1 item exato final: **0.351** — não superou kNN (0.559), Haiku (0.500) nem o fine-tuned v6 (0.457). Escrita completa da implementação, dos bugs reais encontrados no caminho e do diagnóstico qualitativo: ver **Etapa 9 em `poc-pda-716.md`**. Decisão: não investir mais GPU nessa configuração específica sem antes corrigir os pontos identificados na investigação de causa-raiz abaixo.
 
-| Sistema | F1 item exato | F1 raiz |
-| --- | --- | --- |
-| kNN copiar-vizinho | 0.559 | — |
-| API Claude Haiku 4.5 few-shot | 0.500 | 0.732 |
-| Fine-tuned v6 generativo (0.6B) | 0.457 | 0.739 |
-| **Reranker `bge-reranker-v2-m3` (1 época)** | **0.351** | 0.603 |
+### 2.2c Investigação de causa-raiz: por que várias abordagens diferentes falham do mesmo jeito (09/07/2026)
 
-Não superou nenhum dos três baselines anteriores. Análise qualitativa das amostras mostra o modelo identificando o ramo/tópico certo da taxonomia (ex. cluster correto de "Biomassa > emissões atmosféricas") mas falhando em discriminar entre variantes quase-idênticas dentro do mesmo ramo (datas de licenciamento, dispensa vs. não-dispensa) — sintoma de sub-treino em 1 época, não de falha estrutural da abordagem. A curva de `eval_loss` já mostrava retorno decrescente nos últimos ~40% dos steps, mas o *scheduler* de LR foi calibrado para essa única época, então isso não é prova de que 3 épocas (com *schedule* próprio) platoriam do mesmo jeito. Decisão tomada: **não investir mais GPU nessa configuração** — parar aqui em vez de comprometer outras ~26h para 3 épocas sem sinal positivo prévio. Se a linha for retomada no futuro, testar primeiro alternativas mais baratas (outro `loss_type`, LoRA rank maior, mineração de negativos difíceis focada nas variantes confundidas) antes de simplesmente rodar mais épocas.
+18.543 análises parece muita informação, então o resultado consistentemente abaixo do baseline gratuito, em três arquiteturas completamente diferentes (LLM generativo, API few-shot, reranker cross-encoder), levanta a pergunta certa: é coincidência, ou tem uma causa estrutural comum? Testei três hipóteses concretas com medição direta nos dados reais, não especulação.
+
+**Hipótese 1 — truncamento (REFUTADA como causa principal).** O cross-encoder usava `max_length=512` tokens; se a query (norma + requisitos, que pode ser longa) empurrasse o candidato pra fora da janela, o modelo nunca veria a parte que distingue variantes quase-idênticas da taxonomia. Tokenizei uma amostra real de 30 queries × seus candidatos (633 pares): a query sozinha chega a 524 tokens no pior caso (p50=120, p90=225), e apenas **6,3% dos pares** excedem 512 tokens no total. Como o tokenizer trunca preferencialmente a sequência mais longa (`longest_first`), é a query — não o candidato, curto (p50=25 tokens) — quem perde texto na prática. Truncamento é real mas marginal. Ação: subi `max_length` de 512→768 em `configs/reranker/training/{lora,full_ft}.yaml` (grátis, elimina a cauda, zero risco).
+
+**Hipótese 2 — falta de negativos difíceis (REFUTADA).** Se o retrieval kNN só trouxesse negativos "fáceis" (de ramos totalmente diferentes), o modelo nunca aprenderia a discriminar entre variantes parecidas. Medi nos 11.468 pares de treino reais: **86,6%** têm pelo menos um negativo do mesmo ramo raiz que o item gold, e **62,6%** têm um negativo do mesmo sub-ramo (nível 2) — o kNN já naturalmente traz confusores difíceis na maioria dos casos, porque análises de normas parecidas tendem a ter condições do mesmo domínio regulatório. Não é aqui que está o problema.
+
+**Hipótese 3 — cauda longa de itens raros na taxonomia (CONFIRMADA, é a causa dominante).** Contei quantas vezes cada um dos 2.715 itens da taxonomia aparece como positivo nos 11.468 pares de treino do reranker: **53,9% aparecem exatamente 1 vez**, **77,3% aparecem menos de 5 vezes**, e só 8,1% têm 20+ ocorrências. Cruzando isso com o recall real do reranker nas 200 amostras de teste, por faixa de frequência do item gold no treino:
+
+| Frequência do item no treino | Recall do reranker |
+| --- | --- |
+| 0 (nunca visto) | 0.024 |
+| 1–4 (raro) | 0.146 |
+| 5–19 (médio) | 0.236 |
+| 20+ (comum) | 0.541 |
+
+A relação é quase linear. **Isso é exatamente a mesma descoberta da Etapa 2 da POC** (causal-LM: "itens vistos 50+ vezes → 31% recall; itens vistos <10 vezes → 0%"), agora replicada numa arquitetura completamente diferente. Conclusão: o volume total de análises (18,5k) não é o fator relevante — o que importa é como esse volume se distribui entre 2.715 classes, e essa distribução é extremamente desbalanceada (cauda longa / power-law). Nenhuma arquitetura (generativa, cross-encoder, ou kNN) escapa disso: para um item visto 1 vez na vida, não existe sinal suficiente pra aprender o que o distingue dos seus vizinhos na taxonomia, seja qual for o modelo. Isso também explica por que o F1 raiz/nível-2 é sempre bem melhor que o F1 de folha exata em todas as abordagens testadas: as categorias mais amplas têm muito mais suporte agregado (todos os itens de um mesmo ramo contribuem exemplos para aprender esse ramo), enquanto a folha exata depende só das próprias ocorrências daquele item específico.
+
+Isso não é "resultado anormal" — é a assinatura clássica de um problema de classificação de cauda longa extrema (2.715 classes, a maioria com <5 exemplos). É consistente com a régua que a própria Etapa 8 já media por outro ângulo: a faixa de similaridade <0.5 (~30% dos casos, sem precedente parecido no histórico) é onde todo método capota (kNN 0.212, FT 0.135) — baixa similaridade com o histórico e item raro na taxonomia são, na prática, o mesmo fenômeno visto de dois jeitos.
+
+**Correções implementadas (09/07/2026)**, ambas de baixo risco e sem precisar de mais dado novo:
+
+1. **`max_length` 512→768** nas duas configs de treino do reranker — elimina o truncamento residual.
+2. **Oversampling balanceado por classe** em `scripts/build_reranker_dataset.py` (`compute_item_frequency` + `oversample_factor`): registros cujo item positivo mais raro foi visto só 1x no pool de treino são repetidos 4x; 2–4x são repetidos 2x; 5+ ficam como estão (capado em 4x de propósito, pra reponderar sem virar memorização de uma única query). Aplicado só no split de treino — validação fica intocada para não inflar artificialmente o sinal do early stopping. Dataset real regenerado: 11.468 registros base → 15.921 registros efetivos de treino (+38,8%), 613 de validação (sem alteração).
+
+**Opções maiores, não implementadas — decisão do usuário antes de seguir:**
+
+- **Roteamento hierárquico (coarse-to-fine)**: já que o modelo acerta ramo/subramo bem melhor que a folha exata, uma segunda etapa poderia primeiro classificar o ramo (poucas classes, muito suporte) e só depois discriminar entre os poucos irmãos daquele ramo — em vez de rankear direto entre até 40 candidatos de ramos variados. Isso é uma mudança de arquitetura de solução (dois estágios), não uma correção pontual — maior esforço de implementação e validação.
+- **Aumento sintético para itens raros**: gerar pares de treino adicionais para os 77% de itens com <5 exemplos, via paraphraseamento (LLM) do requisito/texto de norma associado a esses itens na taxonomia oficial. Ataca a causa raiz diretamente (mais sinal por classe), mas introduz risco de ruído/viés se a geração sintética não for bem calibrada, e não é uma correção "grátis" — precisa de validação cuidadosa antes de confiar nela para treino.
+- **Reponderação de loss por classe** (em vez de oversampling de registros): equivalente em espírito ao oversampling implementado, mas atuando direto na loss (`LambdaLoss` do `sentence-transformers` não expõe pesos por documento nativamente até onde investigado) — precisaria de uma loss customizada. Não implementado por não ter suporte nativo na biblioteca sem um patch mais invasivo.
+
+Nenhuma dessas três é uma correção "significativa" que eu implementaria sem confirmação, porque todas envolvem trade-offs de escopo/risco que só o usuário deve decidir — mas as duas primeiras (oversampling e `max_length`) já estão aplicadas e valem ser testadas no próximo treino real antes de ir para qualquer uma destas.
 
 ### 2.3 Melhorar o teto do retrieval de candidatos
 

@@ -22,12 +22,17 @@ from finetuning.core.exceptions import TrainingError
 from finetuning.infrastructure.experiment_manager import ExperimentManager, ExperimentRun
 from finetuning.monitoring.hardware import (
     detect_hardware,
+    limit_vram_usage,
     resolve_attention,
     resolve_device,
     resolve_precision,
 )
 from finetuning.monitoring.system_metrics import SystemMetricsCollector
-from finetuning.preprocessing.pair_dataset import load_pair_dataset, to_training_columns
+from finetuning.preprocessing.pair_dataset import (
+    cap_docs_per_query,
+    load_pair_dataset,
+    to_training_columns,
+)
 from finetuning.training.callbacks import MetricsRecorderCallback
 from finetuning.training.reranker_strategies import get_reranker_strategy, merge_lora_for_saving
 from finetuning.training.reranker_trainer_factory import (
@@ -52,10 +57,18 @@ class TrainRerankerModel:
         attention = resolve_attention(profile, config.model.attention)
         if device is DeviceType.CPU:
             logger.warning("Training on CPU: debug mode only, expect very low throughput")
+        limit_vram_usage(device, config.hardware)
         set_seed(config.training.seed)
 
         prepared = load_pair_dataset(config.dataset)
         train_dataset = to_training_columns(prepared.dataset["train"], config.dataset)
+        if config.training.max_train_docs_per_query is not None:
+            train_dataset = cap_docs_per_query(
+                train_dataset,
+                config.dataset,
+                config.training.max_train_docs_per_query,
+                config.training.seed,
+            )
         validation_dataset = to_training_columns(prepared.dataset["validation"], config.dataset)
         has_eval_split = len(validation_dataset) > 0
 

@@ -43,6 +43,7 @@ class RerankerTrainingConfig(BaseConfig):
     loss_type: RerankerLossType = RerankerLossType.LAMBDA
     loss_kwargs: dict[str, float | int | str] = Field(default_factory=dict)
     early_stopping: EarlyStoppingConfig = EarlyStoppingConfig()
+    max_train_docs_per_query: int | None = Field(default=None, gt=0)
 
 
 class RerankerDatasetConfig(BaseConfig):

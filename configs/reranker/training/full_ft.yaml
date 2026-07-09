@@ -16,3 +16,4 @@ early_stopping:
   enabled: true
   patience: 3
   threshold: 0.0
+max_train_docs_per_query: 24

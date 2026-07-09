@@ -17,6 +17,7 @@ from finetuning.core.exceptions import TrainingError
 from finetuning.infrastructure.experiment_manager import ExperimentManager, ExperimentRun
 from finetuning.monitoring.hardware import (
     detect_hardware,
+    limit_vram_usage,
     resolve_attention,
     resolve_device,
     resolve_precision,
@@ -45,6 +46,7 @@ class TrainModel:
         attention = resolve_attention(profile, config.model.attention)
         if device is DeviceType.CPU:
             logger.warning("Training on CPU: debug mode only, expect very low throughput")
+        limit_vram_usage(device, config.hardware)
         set_seed(config.training.seed)
 
         tokenizer = load_tokenizer(config.model, config.tokenizer)

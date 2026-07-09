@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -101,6 +102,33 @@ def test_build_pair_record_skips_when_no_negative_available() -> None:
     assert record is None
 
 
+def test_compute_item_frequency_counts_positive_occurrences_only() -> None:
+    records = [
+        {"candidate_ids": ["1", "2"], "labels": [1.0, 0.0]},
+        {"candidate_ids": ["1", "3"], "labels": [1.0, 0.0]},
+        {"candidate_ids": ["2", "3"], "labels": [0.0, 1.0]},
+    ]
+
+    frequency = build.compute_item_frequency(records)
+
+    assert frequency == {"1": 2, "3": 1}
+
+
+def test_oversample_factor_replicates_rarest_positive_more() -> None:
+    record = {"candidate_ids": ["1", "2"], "labels": [1.0, 0.0]}
+
+    assert build.oversample_factor(record, Counter({"1": 1})) == 4
+    assert build.oversample_factor(record, Counter({"1": 3})) == 2
+    assert build.oversample_factor(record, Counter({"1": 20})) == 1
+
+
+def test_oversample_factor_uses_the_rarest_of_multiple_positives() -> None:
+    record = {"candidate_ids": ["1", "2", "3"], "labels": [1.0, 1.0, 0.0]}
+
+    # item "1" is common (20x) but item "2" is a singleton -> driven by the rarest.
+    assert build.oversample_factor(record, Counter({"1": 20, "2": 1})) == 4
+
+
 def test_main_end_to_end_writes_train_and_validation_splits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -162,7 +190,13 @@ def test_main_end_to_end_writes_train_and_validation_splits(
         (out_dir / "validation_pairs_v1.jsonl").read_text(encoding="utf-8").splitlines()
     )
 
-    assert len(train_lines) + len(validation_lines) <= len(records)
+    # Every item in this fixture is a singleton positive (unique per analysis),
+    # so every train record hits the rarest-item bucket and gets 4x oversampled.
+    unique_train = {line for line in train_lines}
+    assert len(unique_train) + len(validation_lines) <= len(records)
+    assert len(train_lines) == len(unique_train) * 4
+    # Validation must never be oversampled — it has to reflect true generalization.
+    assert len(validation_lines) == len(set(validation_lines))
     for line in train_lines + validation_lines:
         record = json.loads(line)
         assert set(record.keys()) == {"meta", "query", "docs", "labels", "candidate_ids"}

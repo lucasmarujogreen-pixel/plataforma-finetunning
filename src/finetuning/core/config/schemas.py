@@ -183,6 +183,7 @@ class HardwareConfig(BaseConfig):
     prefetch_factor: int = Field(default=2, gt=0)
     persistent_workers: bool = True
     torch_compile: bool = False
+    max_vram_fraction: float | None = Field(default=None, gt=0.0, le=1.0)
 
 
 class TokenizerConfig(BaseConfig):

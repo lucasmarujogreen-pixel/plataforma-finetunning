@@ -2,8 +2,8 @@ method: lora
 seed: 42
 num_epochs: 3.0
 max_steps: -1
-micro_batch_size: 4
-gradient_accumulation_steps: 4
+micro_batch_size: 1
+gradient_accumulation_steps: 16
 max_length: 512
 gradient_checkpointing: true
 eval_steps: 100
@@ -16,3 +16,4 @@ early_stopping:
   enabled: true
   patience: 3
   threshold: 0.0
+max_train_docs_per_query: 24
