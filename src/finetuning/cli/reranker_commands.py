@@ -9,12 +9,14 @@ from finetuning.application.evaluate_reranker_model import (
     EvaluateRerankerModel,
     EvaluateRerankerModelResult,
 )
+from finetuning.application.resume_reranker_training import ResumeRerankerTraining
 from finetuning.application.train_reranker_model import TrainRerankerModel, TrainRerankerModelResult
 from finetuning.cli.common import CONFIG_DIR_OPTION, OVERRIDES_ARGUMENT, console, load_cli_config
 from finetuning.core.config.reranker_schemas import RerankerAppConfig
 from finetuning.core.exceptions import PlatformError
 
 RUN_DIR_OPTION = typer.Option(..., "--run", help="Run directory to evaluate.")
+RESUME_RUN_DIR_OPTION = typer.Option(..., "--run", help="Run directory to resume from.")
 
 
 def _print_train_result(result: TrainRerankerModelResult) -> None:
@@ -59,6 +61,16 @@ def train_reranker(
         result = TrainRerankerModel().execute(config)
     except PlatformError as error:
         console.print(f"[red]Training error:[/red] {error}")
+        raise typer.Exit(code=1) from error
+    _print_train_result(result)
+
+
+def resume_reranker(run_dir: Path = RESUME_RUN_DIR_OPTION) -> None:
+    """Resume reranker training from the last checkpoint of an existing run."""
+    try:
+        result = ResumeRerankerTraining().execute(run_dir)
+    except PlatformError as error:
+        console.print(f"[red]Resume error:[/red] {error}")
         raise typer.Exit(code=1) from error
     _print_train_result(result)
 

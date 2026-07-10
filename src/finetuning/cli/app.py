@@ -40,6 +40,7 @@ app.command("compare")(experiment_commands.compare)
 app.command("export")(export_commands.export)
 app.command("merge-lora")(export_commands.merge_lora)
 app.command("train-reranker")(reranker_commands.train_reranker)
+app.command("resume-reranker")(reranker_commands.resume_reranker)
 app.command("evaluate-reranker")(reranker_commands.evaluate_reranker)
 
 

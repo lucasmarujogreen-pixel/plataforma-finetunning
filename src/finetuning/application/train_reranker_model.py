@@ -50,7 +50,9 @@ class TrainRerankerModelResult:
 
 
 class TrainRerankerModel:
-    def execute(self, config: RerankerAppConfig) -> TrainRerankerModelResult:
+    def execute(
+        self, config: RerankerAppConfig, resume_from: Path | None = None
+    ) -> TrainRerankerModelResult:
         profile = detect_hardware()
         device = resolve_device(profile, config.hardware)
         precision = resolve_precision(profile, config.model.precision)
@@ -81,6 +83,7 @@ class TrainRerankerModel:
                 "resolved_device": device.value,
                 "resolved_precision": precision.value,
                 "resolved_attention": attention.value,
+                "resumed_from": str(resume_from) if resume_from else None,
             },
         )
 
@@ -103,7 +106,9 @@ class TrainRerankerModel:
                 loss=loss,
                 callbacks=self._build_callbacks(config, run, device, has_eval_split),
             )
-            train_output = trainer.train()
+            train_output = trainer.train(
+                resume_from_checkpoint=str(resume_from) if resume_from else None
+            )
             metrics: dict[str, float] = dict(train_output.metrics)
             if has_eval_split:
                 metrics.update(trainer.evaluate())
