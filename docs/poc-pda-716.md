@@ -190,3 +190,35 @@ A necessidade de revisão humana permanece em todos os níveis — o sistema ace
 Melhora real (+0.019 no F1 item) mas pequena — confirma que as correções ajudam marginalmente, não resolvem o gargalo estrutural. Segue sem superar o kNN. Decisão de não continuar investindo GPU nessa linha permanece.
 
 **Nota técnica — `ft resume-reranker` não funciona para LoRA neste setup.** O checkpoint intermediário salvo pelo `Trainer` (`model.safetensors`) tem as chaves corretas do PEFT (`base_layer`/`lora_A`/`lora_B`/`modules_to_save`, verificado direto no arquivo), mas o mecanismo de `resume_from_checkpoint` do `CrossEncoderTrainer` espera essas chaves prefixadas com o índice de módulo do `SentenceTransformer` (`0.model....`) e falha num `load_state_dict` estrito — o mesmo tipo de descompasso de prefixo de chave já visto (e corrigido, só para o save final) no bug 4 acima, agora no caminho de restauração do meio do treino, nunca testado antes por não ter sido necessário. `scripts/recover_reranker_checkpoint.py` contorna isso carregando os pesos manualmente (warm start: pesos preservados, otimizador/scheduler reiniciados) em vez de depender da restauração automática do Trainer.
+
+## 10. Pós-POC — Teste do Claude Sonnet 5 few-shot (10/07/2026)
+
+> Continuação da seção 0/2.2 de `proximos-passos-melhoria-modelo.md`, que já tinha estimado (antes de qualquer teste real) um teto de ganho de "escalar só o modelo" em torno de **F1 0.57–0.60**, baseado na fatia de casos novos onde o Haiku já superava o fine-tuned. Este teste confirma essa estimativa com dado real.
+
+Rodei o mesmo protocolo few-shot da Etapa 8 (`scripts/evaluate_poc_api.py`, 3 vizinhos por exemplo, mesmas 200 amostras de teste), trocando só o modelo de `claude-haiku-4-5` para `claude-sonnet-5`:
+
+| Sistema | F1 item exato | F1 raiz | Match exato |
+| --- | --- | --- | --- |
+| kNN copiar-vizinho | 0.559 | — | 47,5% |
+| API Claude Haiku 4.5 few-shot | 0.500 | 0.732 | 36,0% |
+| Fine-tuned v6 generativo (0.6B) | 0.457 | 0.739 | 42,5% |
+| Reranker (corrigido) | 0.370 | 0.597 | — |
+| **API Claude Sonnet 5 few-shot** | **0.5731** | **0.7791** | 45,5% |
+
+**Esse é o primeiro sistema, em toda a investigação (POC + pós-POC), que supera o kNN no F1 item exato** — e por uma margem real (0.573 vs 0.559), não ruído. Também é o melhor em F1 raiz (0.779, acima dos 0.739 do fine-tuned e 0.732 do Haiku).
+
+**Por que o Sonnet ganhou onde o Haiku perdeu**: a seção 0 de `proximos-passos-melhoria-modelo.md` já tinha isolado que o único recorte da POC inteira onde "modelo mais forte" mostrava vantagem real era a fatia de similaridade <0.5 (Haiku 0.256 vs fine-tuned 0.135) — nos casos repetitivos, cópia já era quase ótimo, então um modelo mais caro não tinha onde ganhar. O Sonnet 5, sendo consideravelmente mais capaz que o Haiku no raciocínio sobre qual candidato da taxonomia corresponde ao requisito, aparentemente também ganha o suficiente nos casos médios/difíceis para superar o teto que travava o Haiku — não é só a fatia <0.5, o ganho aparece agregado no F1 geral.
+
+**Isso muda a recomendação da seção 8?** Parcialmente. A recomendação de produtizar retrieval como motor de sugestão continua válida como base (custo zero, sem dependência de fornecedor), mas agora há evidência de que **complementar com Sonnet 5 nos casos que o retrieval não resolve bem** (baixa similaridade, poucos vizinhos bons) tem retorno real, não hipotético — diferente do Haiku, que testado no mesmo papel não justificava o custo. Custo de API do teste: ~200 chamadas few-shot, poucos dólares (mesma ordem de grandeza do Haiku, ver seção 6).
+
+**Estratificação por similaridade (10/07/2026).** Recalculei a similaridade do vizinho mais próximo (TF-IDF sobre norma+ementa+requisitos, mesma vetorização usada pra escolher os exemplos few-shot) para as 200 amostras e separei o resultado do Sonnet 5 nos mesmos cortes da Etapa 8:
+
+| Similaridade do vizinho mais próximo | n | F1 Sonnet 5 |
+| --- | --- | --- |
+| ≥ 0.8 (quase-duplicata) | 65 | 0.784 |
+| 0.5–0.8 | 105 | 0.570 |
+| < 0.5 (caso genuinamente novo) | 30 | 0.262 |
+
+⚠️ **Ressalva importante**: o `n` de cada faixa aqui (65/105/30) não bate com o da Etapa 8 (50/90/60) porque recalculei a similaridade só com TF-IDF (mesmo método do script de few-shot), não com a combinação e5+TF-IDF usada originalmente no `knn_retrieval.py`/`candidate_retrieval.py`. Ou seja, **os cortes não são idênticos** — a comparação abaixo é direcional, não uma reprodução exata da tabela da Etapa 8.
+
+Ainda assim, a leitura é clara e resolve a pergunta em aberto: o Sonnet 5 **não vence o kNN em nenhuma faixa individual** (0.784 < 0.836 no ≥0.8; 0.570 < 0.633 no 0.5–0.8; 0.262 ≈ 0.212–0.256 no <0.5, na mesma faixa do Haiku) — mas é consistentemente melhor que o Haiku e o fine-tuned em quase todas as faixas, e o suficiente pra virar o resultado agregado. Ou seja: **o ganho do Sonnet 5 não vem de "resolver a cauda difícil"** (que já era a única vantagem do Haiku) — vem de ser um modelo melhor de ponta a ponta, inclusive nos casos "fáceis" onde a cópia literal do kNN ainda é ligeiramente superior. Isso sugere que o Sonnet 5 funciona melhor como **sistema principal** (não só complemento do retrieval na cauda), embora o kNN continue sendo mais barato e ainda vença nos casos de alta similaridade — um sistema híbrido (kNN quando há vizinho muito parecido, Sonnet 5 no resto) provavelmente supera qualquer um dos dois isolado.

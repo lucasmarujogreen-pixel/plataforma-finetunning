@@ -5,14 +5,20 @@ Each test example keeps the v6 prompt (norma + requisitos + kNN candidates) and
 gains few-shot turns: the most similar solved analyses from the training set.
 
 Usage:
-  export ANTHROPIC_API_KEY=...
   uv run --with anthropic python scripts/evaluate_poc_api.py --run runs/<run> [--limit 200]
+
+API key resolution (no manual export needed): ``ANTHROPIC_API_KEY`` if already
+set, else read from the sibling ``motor-ia`` project's ``.env``
+(``AnthropicConfiguration__ApiKey__Agent``, matching motor-ia's own
+convention of using the "Agent" key — not "Vera" — for batch/job workloads
+like this one, to isolate quota/billing from the conversational key).
 
 Scoring and report format mirror evaluate_poc.py so results are comparable.
 """
 
 import argparse
 import json
+import os
 import unicodedata
 from collections import Counter
 from pathlib import Path
@@ -28,6 +34,37 @@ from evaluate_poc import (
 
 TRAIN_PATH = Path("datasets/raw/greenlegis_condicoes_train_v6.jsonl")
 TEST_PATH = Path("datasets/raw/greenlegis_condicoes_test_v6.jsonl")
+MOTOR_IA_ENV_PATH = Path(__file__).resolve().parents[2] / "motor-ia" / ".env"
+MOTOR_IA_ANTHROPIC_KEYS = (
+    "AnthropicConfiguration__ApiKey__Agent",
+    "AnthropicConfiguration__ApiKey__Vera",
+)
+
+
+def resolve_anthropic_api_key() -> str:
+    """``ANTHROPIC_API_KEY`` if set, else the motor-ia project's own key."""
+    existing = os.environ.get("ANTHROPIC_API_KEY")
+    if existing:
+        return existing
+    if not MOTOR_IA_ENV_PATH.is_file():
+        raise RuntimeError(
+            f"ANTHROPIC_API_KEY not set and {MOTOR_IA_ENV_PATH} not found. "
+            "Export ANTHROPIC_API_KEY or run this next to a motor-ia checkout."
+        )
+    values: dict[str, str] = {}
+    for line in MOTOR_IA_ENV_PATH.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    for key_name in MOTOR_IA_ANTHROPIC_KEYS:
+        if values.get(key_name):
+            return values[key_name]
+    raise RuntimeError(
+        f"None of {MOTOR_IA_ANTHROPIC_KEYS} set in {MOTOR_IA_ENV_PATH}. "
+        "Export ANTHROPIC_API_KEY instead."
+    )
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
 
@@ -79,7 +116,7 @@ def main() -> None:
     )
     order = np.argsort(-(test_matrix @ train_matrix.T).toarray(), axis=1)
 
-    client = Anthropic()
+    client = Anthropic(api_key=resolve_anthropic_api_key())
     system_prompt = examples[0]["messages"][0]["content"]
 
     stats: Counter[str] = Counter()
