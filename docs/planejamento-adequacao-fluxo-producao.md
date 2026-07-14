@@ -110,6 +110,14 @@ Estas respostas determinam o desenho das fases seguintes. Validar com queries di
 
 **Status (2026-07-13, iteração 3):** duas novas alavancas implementadas mirando as espécies genéricas: (d) **órgão emissor** no input (`normas.OrgaosIds` → `orgaos.NomeCompleto`, presente em 99,98% das normas) — entra como linha "Órgão emissor:" no texto de retrieval/few-shot/alvo; para NR/IN/Portaria é o sinal que distingue o domínio da condição (Ministério do Trabalho → SST, IBAMA → ambiental). O texto integral da norma foi descartado como alavanca: não existe no Mongo (`normas` só tem título/resumo; o conteúdo fica em arquivo via `PrimeiroArquivoId`). (e) **pool da dica kNN ampliado para 10 vizinhos** (`knn_hint_k`, CLI `--hint-k`), mantendo 3 como demonstrações few-shot — a agregação da dica foi o mecanismo que mediu ganho, não o número de demos. **Validação dev n=150 (run `20260713_114407`, pareado com as rodadas anteriores — mesmas amostras):** overall 0.6566 (sem alavancas) → 0.6612 (dica-3) → **0.6995** (pareado vs sem-alavancas: 23 melhores / 10 piores / 117 iguais). Tipo 1: 0.7118 → **0.7301** (14/8/102). Tipo 2/3: 0.30 → **0.5319** (9/2/15) — maior salto da POC, soma de Complemento + órgão + dica-10. Nenhuma degradação nas espécies fortes (Lei Municipal/Complementar ≥ 83% de acerto exato). Aprovado para o test n=200.
 
+**Status (2026-07-13, iteração 4 — em validação):** (f) **órgão emissor fora do embedding** — continua no prompt (alvo e few-shot, via `render_target_block`) mas saiu do texto de busca (`build_query_text(include_orgao=False)` por padrão); corrige a regressão de Resolução (0.4112 → 0.3495) preservando os ganhos de NR/IN, e o retrieval volta à configuração da rodada 0.596. (g) **segunda passada hierárquica** (`--no-refine` para ablação): a anatomia do erro mostra F1 raiz ~0.75 vs folha ~0.62 — o modelo acerta o ramo e erra a folha; a segunda chamada continua a mesma conversa (taxonomia lida do cache), reapresenta expandidos só os ramos da 1ª resposta + dos vizinhos e pede reavaliação item a item (fallback: mantém a 1ª resposta se a 2ª não parsear; amostras marcadas com `refined`). Custo por análise ~2x chamadas (2ª chamada é cache-read + ramos).
+
+**Validação dev da v1 (run `20260713_153755`): regressão — 0.6995 → 0.6522.** Diagnóstico nos dados: itens previstos saltaram 275 → 313 (+14%), precisão 77,5% → 67,4% com recall estável; nos 26 casos piorados a 2ª passada adicionou 39 itens (removeu 21) — a instrução "adicione itens aplicáveis que faltaram" induziu superpredição. **Correção (v2):** a revisão passou a ser SÓ de especificidade — troca o item pela variante mais específica do próprio ramo, com proibição explícita de adicionar/remover ("na dúvida, mantenha") — e só dispara quando algum item da 1ª resposta tem descendente selecionável (`has_selectable_descendants`; itens-folha pulam a 2ª chamada, cortando custo). Ramos apresentados: apenas os da 1ª resposta (vizinhos saíram do escopo da revisão).
+
+**Validação dev da v2 (run `20260713_161153`): 0.6807** — a superpredição da v1 sumiu (itens previstos 275 → 283, contra 313 na v1), mas ainda -0.019 vs a referência 0.6995. O pareado por amostra isolou as duas alavancas: (g) **refine v2 é neutro-a-levemente-positivo** — nas 75 amostras com `refined=True` o F1 ficou 0.7260 → 0.7259 (6 melhores / 6 piores), enquanto o grupo SEM refine caiu -0.016 por efeito puro do retrieval, sugerindo que o refine compensou essa perda no grupo dele; (f) **tirar o órgão do embedding é o que custa os -0.019** — os vizinhos mudaram em 149/150 amostras e, no dev, Resolução PIOROU sem o órgão (0.5626 → 0.4926), o contrário do que o test sugeria: a atribuição da regressão de Resolução ao embedding estava confundida com a mudança simultânea do pool da dica (3 → 10 vizinhos), feita na mesma rodada. **Decisão: alavanca (f) revertida** (`include_orgao=True` de volta como padrão em `build_query_text`); a próxima rodada dev isola o refine v2 puro — única diferença vs o run 0.6995 (esperado ≥ 0.70 se o refine agrega; ~0.6995 se neutro, e nesse caso o refine sai do default por custar ~2x chamadas sem ganho).
+
+**Isolamento do refine v2 (run `20260713_165406`, órgão de volta no embedding): micro-F1 idêntico à referência — 0.6995 vs 0.6995** (precisão 0.7745 e recall 0.6377 idênticos até a 4ª casa). Por amostra há leve viés positivo (11 melhores / 5 piores; dentro do grupo refinado, 7/2), mas os ganhos e perdas de itens se anulam no micro. Vizinhos divergiram em 12/150 amostras por não-determinismo do embedding da OpenAI (mesmo conjunto com ordem trocada em 8 delas, scores divergindo na 4ª casa) — ruído, não mudança de configuração. **Decisão: alavanca (g) fora do default** (`--refine` opt-in no CLI; `refine=False` em `execute`/`RunEvaluation`) — não paga as ~2x chamadas em metade das amostras. Encerra a iteração 4: configuração vigente volta a ser exatamente a da iteração 3 (dev 0.6995 / test 0.6171), com o refine disponível para retomar caso uma alavanca futura aumente a taxa de erro de folha.
+
 **PDA-717 executada (2026-07-13):** os três sistemas foram comparados nas **mesmas 200 amostras** do test da 715 e na mesma régua (a Fase F prevista no §5 foi cumprida por essa via): prompt enriquecido **0.6198**, kNN 0.4625, fine-tuned v6 0.4524 — o prompt vence todos os cortes (tipo, espécie). Entregável completo com matriz de custo/manutenção/riscos e recomendação: `poc_promptanalise/comparacao_pocs_717/comparativo-pda-717.md`.
 
 **Resultado test n=200 (run `20260713_120625`, pareado nas mesmas 200 amostras):** overall 0.5605 (base) → 0.5960 (dica-3+Complemento) → **0.6171** (pareado vs base: 47 melhores / 20 piores / 133 iguais; vs rodada anterior: 30/22/148). Tipo 1: **0.6450**; tipo 2/3: **0.42**. Acerto exato 47% → 51%. Linha histórica nas 170 tipo 1 compartilhadas: 0.5927 (PDA-715 original) → 0.5876 → 0.6216 → **0.6450**. Por espécie vs rodada anterior: o órgão emissor moveu **NR 0.2857 → 0.4167** (5/2) e **IN 0.1778 → 0.2692** (3/0), Lei Estadual 0.59 → 0.68; porém **Resolução regrediu 0.4112 → 0.3495** (2 melhores / 8 piores) e Portaria ficou neutra (2/6) — hipótese: emissor de Resolução é heterogêneo (CONAMA/ANVISA/ANTT/agências) e a mudança no embedding piorou os vizinhos recuperados dessas amostras. Próximo passo natural: investigar as 8 Resoluções que pioraram (vizinhos antes/depois) antes de nova alavanca.
@@ -121,23 +129,28 @@ Estas respostas determinam o desenho das fases seguintes. Validar com queries di
 É a abordagem vencedora (F1 0.5985) e a que mais se beneficia da descoberta: o fluxo real é exatamente "identificar as informações da análise e escolher da lista do banco". Adequações em ordem de execução:
 
 ### Fase A — Camada de candidatos real (ataca P1 e P5)
+
 - Substituir `_collect_candidates` (união vizinhos+macro, cap 40, truncamento alfabético) por um **provider de lista real**: carregar de `FormularioRead` (Mongo `greenlegis.formularios`) a árvore vigente (filtrando `Excluido`), aplicando o escopo confirmado na pergunta 1.
 - Se a lista escopada couber no contexto (poucas centenas de itens), enviar **inteira** no prompt — elimina o teto de recall. Se não couber, manter retrieval apenas como **pré-ranqueador** da lista real (nunca como fonte), com cap bem maior e priorização por relevância (corrige de quebra o bug documentado do truncamento alfabético).
 - Medir `candidate_recall` antes/depois — meta: ≥ 0.95 (hoje 0.6705).
 
 ### Fase B — Canonicalização por `FormularioId` (ataca P4)
+
 - Toda a cadeia (candidatos no prompt, saída da LLM, ground truth, métricas) passa a usar `FormularioId` como chave; o caminho textual (`"XPTO / Filho"`) vira apresentação. A saída da LLM passa a ser validada contra o conjunto de IDs da lista enviada — rejeição/retry se vier ID fora da lista (garantia dura do "nunca inventar").
 
 ### Fase C — Normalização hierárquica pai/filho (ataca P2)
+
 - Implementar `minimal_set(itens)`: dado um conjunto de itens, **remover todo item que seja ancestral de outro item do conjunto** (usando a árvore de `PaiId`). Aplicar ao ground truth **e** à predição antes de qualquer métrica.
 - Instruir a LLM no system prompt: "selecione sempre o item mais específico aplicável; não selecione o pai quando um filho dele já foi selecionado".
 - Recalcular as métricas da rodada final atual (n=200) com essa normalização **sem mudar mais nada**, para separar o ganho da métrica corrigida do ganho das outras fases.
 
 ### Fase D — Dois caminhos por tipo de análise (ataca P3)
+
 - **Com requisito:** caminho atual (norma + ementa + requisitos), assunto derivado do requisito.
 - **Sem requisito:** novo template — norma como um todo (espécie + título + ementa) + campo *assunto* (manual). Reincorporar as análises hoje descartadas ao universo de avaliação, com relatório de métricas **separado por tipo** (as bases são diferentes; não misturar).
 
 ### Fase E — Re-avaliação e critérios
+
 - Repetir o protocolo da 715 (split dev/test por hash, test só no final) com as fases A–D aplicadas.
 - Métricas: item_f1 por `FormularioId` sobre conjuntos mínimos + F1 hierárquica (mantida, agora como diagnóstico) + `candidate_recall` + quebra por espécie e por tipo de análise.
 - **Critério de sucesso sugerido:** item_f1 (conjunto mínimo) ≥ 0.75 no agregado com `candidate_recall` ≥ 0.95, e nenhuma espécie relevante abaixo de 0.5. *(O 0.5985 atual foi obtido com teto de candidatos 0.67 e métrica que pune a semântica correta — há espaço real para esse salto.)*
@@ -149,10 +162,12 @@ Estas respostas determinam o desenho das fases seguintes. Validar com queries di
 A recomendação da 716 (não seguir com fine-tuning) **continua válida**, mas os experimentos foram feitos com o alvo errado (P1–P3). Adequar o mínimo para manter a comparação honesta e a opção viva:
 
 ### Fase F — Dataset v7 (correção do alvo, mesmo sem re-treinar)
+
 - Reconstruir o dataset com: candidatos = lista real escopada (não kNN), targets normalizados para conjunto mínimo por `FormularioId`, separação por tipo de análise (incluindo o fluxo "sem requisito"), notação `" / "` apenas como display.
 - Reprocessar as **avaliações existentes** (kNN, API few-shot, fine-tuned v6, reranker) contra o v7 com a métrica normalizada — atualiza o comparativo `comparativo-abordagens-pda-716.md` na mesma régua da 715 adequada.
 
 ### Fase G — Re-treino, somente se disparado
+
 - **Gatilho:** a PDA-715 adequada (Fase E) não atingir o critério de sucesso, **ou** custo/latência da API inviabilizar produção.
 - Se disparado, a forma correta agora é clara: **não é geração** — é seleção/ranqueamento sobre a lista real:
   - reranker (`bge-reranker-v2-m3`, trilho já existente em `configs/reranker/`) pontuando os itens da **lista real escopada** (não candidatos kNN — remove o `top_k` fixo e os falsos positivos documentados);
